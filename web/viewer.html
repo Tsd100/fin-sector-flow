@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>板块资金分时流向</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #fafafa; }
+  #chart { width: 100%; height: calc(100% - 48px); }
+  #controls { height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: #fff; border-top: 1px solid #eee; font-size: 14px; }
+  #controls button { padding: 4px 14px; font-size: 14px; cursor: pointer; }
+  #controls .grow { flex: 1; }
+  #status { color: #666; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div id="chart"></div>
+<div id="controls">
+  <button id="play">▶ 回放</button>
+  <label>速度 <input id="speed" type="range" min="1" max="40" value="12"></label>
+  <span id="speed-label">12×</span>
+  <span class="grow"></span>
+  <span id="status"></span>
+</div>
+<script>
+const params = new URLSearchParams(location.search);
+const dateParam = params.get('date') || 'mock';
+const dataUrl = `../data/${dateParam}.json`;
+const statusEl = document.getElementById('status');
+
+statusEl.textContent = `loading ${dataUrl}…`;
+fetch(dataUrl)
+  .then(r => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); })
+  .then(render)
+  .catch(err => { statusEl.textContent = `加载失败: ${err.message}`; });
+
+function render(d) {
+  statusEl.textContent = `${d.trade_date} · ${d.series.length} 板块 · ${d.session_minutes} 分钟`;
+  const N = d.session_minutes;
+  const tickValues = d.ticks.map(t => t.value);
+  const tickLookup = Object.fromEntries(d.ticks.map(t => [t.value, t.label]));
+
+  const chart = echarts.init(document.getElementById('chart'));
+  window.addEventListener('resize', () => chart.resize());
+
+  // Pre-build [x, y] pairs once; replay slices into this array.
+  const fullSeriesData = d.series.map(s => s.data.map((v, i) => [i, v]));
+
+  function makeOption(cursor) {
+    return {
+      animation: false,
+      title: {
+        text: `${d.trade_date} 收盘`,
+        subtext: d.title || '资金实时分时流向',
+        left: 'center',
+        top: 8,
+        textStyle: { fontSize: 18, fontWeight: 'bold' },
+        subtextStyle: { fontSize: 14, color: '#444' },
+      },
+      grid: { left: 60, right: 130, top: 70, bottom: 36 },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'line' },
+        formatter: (items) => {
+          if (!items.length) return '';
+          const x = items[0].value[0];
+          const label = tickLookup[x] || `${x}`;
+          const sorted = [...items].sort((a, b) => b.value[1] - a.value[1]);
+          const lines = sorted.map(it => {
+            const v = it.value[1];
+            const sign = v >= 0 ? '+' : '';
+            return `<span style="display:inline-block;width:8px;height:8px;background:${it.color};margin-right:6px;border-radius:50%"></span>${it.seriesName} <b>${sign}${v.toFixed(2)}</b>`;
+          });
+          return `<div style="font-weight:bold;margin-bottom:4px">${label}</div>` + lines.join('<br>');
+        },
+      },
+      xAxis: {
+        type: 'value',
+        min: 0,
+        max: N - 1,
+        axisLabel: {
+          customValues: tickValues,
+          formatter: v => tickLookup[Math.round(v)] || '',
+          fontSize: 12,
+        },
+        axisTick: { customValues: tickValues, alignWithLabel: false },
+        splitLine: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        name: '亿元',
+        nameLocation: 'end',
+        nameGap: 14,
+        axisLabel: { formatter: v => v.toFixed(0) },
+        splitLine: { lineStyle: { type: 'dashed', color: '#eee' } },
+      },
+      series: d.series.map((s, i) => ({
+        name: s.name,
+        type: 'line',
+        smooth: true,
+        showSymbol: false,
+        sampling: 'lttb',
+        lineStyle: { width: 1.6, color: s.color },
+        itemStyle: { color: s.color },
+        emphasis: { focus: 'series', lineStyle: { width: 2.4 } },
+        endLabel: {
+          show: true,
+          formatter: p => {
+            const v = p.value[1];
+            const sign = v >= 0 ? '+' : '';
+            return `${p.seriesName} ${sign}${v.toFixed(2)}`;
+          },
+          color: s.color,
+          fontSize: 11,
+          distance: 6,
+        },
+        markLine: i === 0 ? {
+          symbol: 'none',
+          silent: true,
+          data: [{ yAxis: 0 }],
+          lineStyle: { color: '#888', type: 'solid', width: 1 },
+          label: { show: false },
+        } : undefined,
+        data: fullSeriesData[i].slice(0, cursor),
+      })),
+    };
+  }
+
+  // Initial render: full day visible.
+  let cursor = N;
+  chart.setOption(makeOption(cursor));
+
+  // Replay animation
+  const playBtn = document.getElementById('play');
+  const speedSlider = document.getElementById('speed');
+  const speedLabel = document.getElementById('speed-label');
+  let timer = null;
+
+  speedSlider.oninput = () => { speedLabel.textContent = `${speedSlider.value}×`; };
+
+  function stopReplay() {
+    if (timer) { clearInterval(timer); timer = null; }
+    playBtn.textContent = '▶ 回放';
+  }
+
+  function startReplay() {
+    cursor = 1;
+    playBtn.textContent = '⏸ 暂停';
+    const tick = () => {
+      const speed = +speedSlider.value;
+      cursor = Math.min(N, cursor + Math.max(1, Math.round(speed / 6)));
+      chart.setOption({ series: d.series.map((s, i) => ({ data: fullSeriesData[i].slice(0, cursor) })) });
+      const labelText = tickLookup[cursor - 1] || '';
+      statusEl.textContent = `${d.trade_date} · 回放中 ${cursor}/${N} ${labelText}`;
+      if (cursor >= N) {
+        stopReplay();
+        statusEl.textContent = `${d.trade_date} · 回放完成`;
+      }
+    };
+    const interval = 1000 / +speedSlider.value;
+    timer = setInterval(tick, interval);
+  }
+
+  playBtn.onclick = () => {
+    if (timer) stopReplay();
+    else startReplay();
+  };
+}
+</script>
+</body>
+</html>

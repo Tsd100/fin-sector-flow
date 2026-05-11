@@ -1,0 +1,28 @@
+trade_date: 2026-05-11
+title: 资金实时分时流向
+
+# Color used when a sector closes with positive main net inflow.
+inflow_color: "#d62728"
+# Color used when a sector closes with negative main net inflow.
+outflow_color: "#1f77b4"
+
+# Default watchlist taken from the ss4 close screenshot of 2026-05-08.
+# A list of bare names uses inflow/outflow color from above.
+# A mapping {name: <name>, color: <hex>} overrides per-line color.
+watchlist:
+  - 人形机器人
+  - 光模块
+  - CPO概念
+  - 减速器
+  - 消费电子
+  - 商业航天
+  - 中药
+  - PCB概念
+  - 算力芯片
+  - 有色金属
+  - 人工智能
+  - 存储芯片
+  - 罕见病
+  - 固态电池
+  - 电力设备
+  - 储能
