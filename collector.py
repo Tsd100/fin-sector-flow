@@ -5,11 +5,12 @@ import argparse
 import logging
 import random
 import time
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 
 import db
-import eastmoney
+import export
+import providers
 
 CN = timezone(timedelta(hours=8))
 
@@ -41,25 +42,52 @@ def to_session_minute(ts: datetime) -> int | None:
     return None
 
 
-def sleep_until_next_minute_with_jitter(*, max_jitter_s: float = 10.0) -> None:
+def sleep_until_next_poll_with_jitter(
+    *, interval_seconds: int = 60, max_jitter_s: float = 10.0
+) -> None:
     now = now_cn()
-    next_minute = (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
-    target = next_minute + timedelta(seconds=random.uniform(0, max_jitter_s))
+    interval_seconds = max(1, int(interval_seconds))
+    epoch = int(now.timestamp())
+    next_epoch = ((epoch // interval_seconds) + 1) * interval_seconds
+    next_poll = datetime.fromtimestamp(next_epoch, tz=CN)
+    target = next_poll + timedelta(seconds=random.uniform(0, max_jitter_s))
     delay = (target - now_cn()).total_seconds()
     if delay > 0:
         time.sleep(delay)
 
 
-def run_once(*, db_path: Path) -> int:
+def sleep_until_next_minute_with_jitter(*, max_jitter_s: float = 10.0) -> None:
+    """Backward-compatible one-minute sleep helper."""
+    sleep_until_next_poll_with_jitter(max_jitter_s=max_jitter_s)
+
+
+def run_once(
+    *,
+    db_path: Path,
+    config: dict | None = None,
+    config_path: Path = Path("config.yaml"),
+    output_dir: Path = Path("data"),
+    provider: str | None = None,
+    now: datetime | None = None,
+) -> int:
     """Collect one tick. Returns rows written, or 0 if outside trading window."""
-    ts = now_cn().replace(second=0, microsecond=0)
+    config = config if config is not None else export.load_config(config_path)
+    provider_name = provider or config.get("provider", "sina")
+    ts = (now or now_cn()).replace(second=0, microsecond=0)
     sm = to_session_minute(ts)
     if sm is None:
         return 0
 
+    db.init(db_path)
     rows: list[dict] = []
     for st in ("industry", "concept"):
-        rows.extend(eastmoney.fetch_sector_snapshot(st))
+        rows.extend(
+            providers.fetch_sector_snapshot(
+                st,
+                provider=provider_name,
+                config=config,
+            )
+        )
     n = db.upsert(
         rows,
         trade_date=ts.date().isoformat(),
@@ -67,6 +95,13 @@ def run_once(*, db_path: Path) -> int:
         session_min=sm,
         db_path=db_path,
     )
+    if n:
+        payload = export.build(
+            trade_date=ts.date().isoformat(),
+            db_path=db_path,
+            config=config,
+        )
+        export.write_payload(payload, output_dir / f"{ts.date().isoformat()}.json")
     return n
 
 
@@ -78,8 +113,25 @@ def main() -> None:
         default=COLLECTOR_HARD_STOP.strftime("%H:%M"),
         help="HH:MM (CN time) hard stop. Default 15:05.",
     )
+    parser.add_argument("--config", default="config.yaml", help="YAML config path")
+    parser.add_argument(
+        "--provider",
+        choices=("sina", "eastmoney"),
+        default=None,
+        help="Data provider; default comes from config.yaml",
+    )
+    parser.add_argument("--output-dir", default="data", help="Export JSON directory")
+    parser.add_argument(
+        "--interval-seconds",
+        type=int,
+        default=None,
+        help="Polling interval; default comes from config.yaml",
+    )
     args = parser.parse_args()
     db_path = Path(args.db)
+    config = export.load_config(Path(args.config))
+    provider = args.provider or config.get("provider", "sina")
+    interval_seconds = args.interval_seconds or int(config.get("poll_interval_seconds", 300))
     until_h, until_m = (int(x) for x in args.until.split(":"))
     until_dt = dtime(until_h, until_m)
 
@@ -91,7 +143,13 @@ def main() -> None:
     log = logging.getLogger("collector")
 
     db.init(db_path)
-    log.info("collector started, db=%s, hard_stop=%s CN", db_path, until_dt)
+    log.info(
+        "collector started, provider=%s, db=%s, interval=%ss, hard_stop=%s CN",
+        provider,
+        db_path,
+        interval_seconds,
+        until_dt,
+    )
 
     consecutive_failures = 0
     while True:
@@ -105,7 +163,12 @@ def main() -> None:
             log.info("%s | outside trading window, sleep", ts.strftime("%H:%M"))
         else:
             try:
-                n = run_once(db_path=db_path)
+                n = run_once(
+                    db_path=db_path,
+                    config=config,
+                    output_dir=Path(args.output_dir),
+                    provider=provider,
+                )
                 consecutive_failures = 0
                 log.info("%s sm=%d | saved %d rows", ts.strftime("%H:%M"), sm, n)
             except Exception as e:
@@ -122,7 +185,7 @@ def main() -> None:
                         "5 consecutive failures — main loop continues but check the network/API"
                     )
 
-        sleep_until_next_minute_with_jitter()
+        sleep_until_next_poll_with_jitter(interval_seconds=interval_seconds)
 
 
 if __name__ == "__main__":

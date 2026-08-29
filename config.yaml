@@ -1,5 +1,13 @@
 trade_date: 2026-05-11
 title: 资金实时分时流向
+provider: sina
+poll_interval_seconds: 300
+metric_label: 板块净流入（新浪口径）
+
+sina:
+  fenlei:
+    industry: 0
+    concept: 1
 
 # Color used when a sector closes with positive main net inflow.
 inflow_color: "#d62728"

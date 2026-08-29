@@ -23,9 +23,14 @@ TICKS = [
 ]
 
 
-def _load_config(path: Path) -> dict:
-    with path.open() as f:
+def load_config(path: Path) -> dict:
+    with path.open(encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def _load_config(path: Path) -> dict:
+    """Backward-compatible private alias for callers using the old helper."""
+    return load_config(path)
 
 
 def _normalize_watchlist(raw) -> list[dict]:
@@ -41,6 +46,16 @@ def _normalize_watchlist(raw) -> list[dict]:
     return items
 
 
+def write_payload(payload: dict, out: Path) -> Path:
+    """Write an exported payload as UTF-8 JSON and return its path."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return out
+
+
 def build(*, trade_date: str, db_path: Path, config: dict) -> dict:
     rows = db.fetch_for_date(trade_date, db_path=db_path)
     if not rows:
@@ -53,12 +68,15 @@ def build(*, trade_date: str, db_path: Path, config: dict) -> dict:
     name_to_color = {w["name"]: w["color"] for w in watchlist}
     target_names = [w["name"] for w in watchlist]
 
-    # Pivot: rows = session_min, columns = sector_name, values = main_net_yi.
-    # If the same name appears under both industry+concept, keep the one with
-    # the larger absolute close value (typically what users mean).
-    df = df.drop_duplicates(subset=["session_min", "sector_name"], keep="last")
+    # Pivot by the stable board code, not the display name. This keeps a line
+    # continuous when Sina changes a board name during the trading day.
     wide = (
-        df.pivot(index="session_min", columns="sector_name", values="main_net_yi")
+        df.pivot_table(
+            index="session_min",
+            columns="sector_code",
+            values="main_net_yi",
+            aggfunc="last",
+        )
         .reindex(range(SESSION_MINUTES))
         .ffill()
     )
@@ -69,10 +87,22 @@ def build(*, trade_date: str, db_path: Path, config: dict) -> dict:
     series = []
     missing = []
     for name in target_names:
-        if name not in wide.columns:
+        candidates = df.loc[df["sector_name"] == name, ["sector_code", "main_net_yi"]]
+        if candidates.empty:
             missing.append(name)
             continue
-        col = wide[name]
+
+        # If the same display name exists in industry and concept data, use
+        # the board code whose latest available absolute value is largest.
+        scores = {}
+        for code, group in candidates.groupby("sector_code", sort=False):
+            values = group["main_net_yi"].dropna().tolist()
+            scores[code] = abs(values[-1]) if values else float("-inf")
+        code = max(scores, key=scores.get)
+        if code not in wide.columns:
+            missing.append(name)
+            continue
+        col = wide[code]
         # Replace NaN with None so JSON serializes as null.
         data = [None if pd.isna(v) else round(float(v), 3) for v in col.tolist()]
         # Color: explicit override > sign of close > default
@@ -82,9 +112,6 @@ def build(*, trade_date: str, db_path: Path, config: dict) -> dict:
         else:
             close = next((v for v in reversed(data) if v is not None), None)
             color = inflow_color if (close is not None and close >= 0) else outflow_color
-        # Find sector_code for stability/display
-        codes = df.loc[df["sector_name"] == name, "sector_code"].unique().tolist()
-        code = codes[0] if codes else ""
         series.append({"name": name, "code": code, "color": color, "data": data})
 
     if missing:
@@ -93,6 +120,9 @@ def build(*, trade_date: str, db_path: Path, config: dict) -> dict:
     return {
         "trade_date": trade_date,
         "title": config.get("title", "资金实时分时流向"),
+        "provider": config.get("provider", "sina"),
+        "metric_label": config.get("metric_label", "板块净流入"),
+        "updated_at": str(df["ts"].max()) if "ts" in df else None,
         "session_minutes": SESSION_MINUTES,
         "ticks": TICKS,
         "series": series,
@@ -109,12 +139,11 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 
-    config = _load_config(Path(args.config))
+    config = load_config(Path(args.config))
     payload = build(trade_date=args.date, db_path=Path(args.db), config=config)
 
     out = Path(args.out) if args.out else Path("data") / f"{args.date}.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    write_payload(payload, out)
     print(f"wrote {out}: {len(payload['series'])} series × {payload['session_minutes']} points")
 
 

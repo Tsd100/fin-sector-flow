@@ -102,7 +102,7 @@ def fetch_for_date(
     with connect(db_path) as conn:
         cur = conn.execute(
             """
-            SELECT session_min, sector_type, sector_code, sector_name,
+            SELECT session_min, ts, sector_type, sector_code, sector_name,
                    pct_chg, main_net
               FROM sector_fund_flow_tick
              WHERE trade_date = ?
