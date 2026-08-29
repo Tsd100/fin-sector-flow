@@ -3,153 +3,422 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>板块资金分时流向</title>
+<title>板块资金实时流向</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #fafafa; }
-  #chart { width: 100%; height: calc(100% - 48px); }
-  #controls { height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: #fff; border-top: 1px solid #eee; font-size: 14px; }
-  #controls button { padding: 4px 14px; font-size: 14px; cursor: pointer; }
-  #controls .grow { flex: 1; }
-  #status { color: #666; font-variant-numeric: tabular-nums; }
+  :root {
+    --ink: #18212f;
+    --muted: #718096;
+    --line: #e7ebf2;
+    --blue: #2f6fed;
+    --blue-soft: #eff5ff;
+    --red: #c94255;
+    --green: #3b8471;
+    --panel: #ffffff;
+    --canvas: #f6f8fb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    color: var(--ink);
+    background: var(--canvas);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  button, input { font: inherit; }
+  button { cursor: pointer; }
+  .app-shell { max-width: 1280px; margin: 0 auto; padding: 22px 24px 32px; }
+  .topbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; margin-bottom: 18px; }
+  .eyebrow { color: var(--blue); font-size: 11px; letter-spacing: .14em; font-weight: 800; text-transform: uppercase; }
+  h1 { margin: 5px 0 0; font-size: 27px; letter-spacing: -.025em; }
+  .top-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  .source-badge, .connection-badge { display: inline-flex; align-items: center; gap: 8px; color: #506174; font-size: 12px; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 9px 13px; }
+  .connection-badge { color: #22835c; border-color: #b9e3ce; background: #f2fbf6; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #28a26d; box-shadow: 0 0 0 4px #e5f5ec; }
+  .dot.offline { background: #c8893d; box-shadow: 0 0 0 4px #fbf0df; }
+  .panel, .summary-card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 12px 32px rgba(27, 45, 73, .06); }
+  .panel { overflow: hidden; }
+  .tabs { display: flex; gap: 5px; padding: 8px; border-bottom: 1px solid var(--line); background: #fbfcfe; }
+  .tab { flex: 0 0 auto; border: 0; border-radius: 10px; padding: 11px 28px; color: #3c495c; background: transparent; font-size: 15px; font-weight: 750; }
+  .tab:hover { background: #f0f4fb; }
+  .tab.active { color: #fff; background: var(--blue); box-shadow: 0 5px 12px rgba(47, 111, 237, .25); }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .group { display: flex; align-items: center; gap: 6px; }
+  .label { color: var(--muted); font-size: 12px; margin-right: 2px; }
+  .chip, .action { border: 1px solid #dfe5ee; border-radius: 9px; padding: 8px 13px; color: #435268; background: #fff; font-size: 13px; font-weight: 650; }
+  .chip:hover, .action:hover { border-color: #a9c2f1; color: var(--blue); }
+  .chip.active { border-color: #9ebcf8; color: var(--blue); background: var(--blue-soft); }
+  .action.primary { color: var(--blue); border-color: #d8e3fb; }
+  .spacer { flex: 1; }
+  #chart { width: 100%; height: min(61vh, 600px); min-height: 420px; }
+  .chart-wrap { position: relative; padding: 10px 18px 0; }
+  .chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 4px 0; }
+  .chart-title { font-size: 14px; font-weight: 750; }
+  .chart-meta { color: var(--muted); font-size: 12px; text-align: right; }
+  .replay { display: flex; align-items: center; gap: 10px; padding: 13px 18px 17px; border-top: 1px solid #f0f2f6; }
+  .round-button { width: 35px; height: 35px; border: 1px solid #dfe5ee; border-radius: 50%; color: var(--blue); background: #fff; font-size: 15px; }
+  .round-button:hover { border-color: #9ebcf8; background: var(--blue-soft); }
+  .range { flex: 1; min-width: 140px; accent-color: var(--blue); }
+  .time-label { min-width: 145px; color: #66758a; font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; }
+  .live-button { border: 1px solid #9fd4c0; border-radius: 999px; padding: 8px 14px; color: #22835c; background: #effaf5; font-size: 12px; font-weight: 750; }
+  .live-button.active { color: #fff; border-color: #22835c; background: #22835c; }
+  .summary-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; margin-top: 14px; }
+  .summary-card { padding: 16px 18px; }
+  .summary-card h2 { margin: 0 0 11px; font-size: 14px; }
+  .ranking-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; }
+  .rank-row { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 8px; min-height: 37px; border-top: 1px solid #f0f2f6; font-size: 13px; }
+  .rank-row:nth-child(-n+2) { border-top: 0; }
+  .rank-no { color: #a6b0bf; font-variant-numeric: tabular-nums; }
+  .rank-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-value { font-variant-numeric: tabular-nums; font-weight: 750; }
+  .rank-value.up { color: var(--red); }
+  .rank-value.down { color: var(--green); }
+  .note { margin: 0; color: #69788d; font-size: 12px; line-height: 1.8; }
+  #status { margin-top: 12px; min-height: 18px; color: #6c7b90; font-size: 12px; text-align: right; }
+  .toast { position: fixed; right: 24px; bottom: 24px; z-index: 4; display: none; padding: 10px 14px; border: 1px solid #cfe0ff; border-radius: 10px; color: #2a5bb5; background: #eff5ff; box-shadow: 0 8px 24px rgba(27, 45, 73, .12); font-size: 13px; }
+  .toast.show { display: block; }
+  @media (max-width: 760px) {
+    .app-shell { padding: 13px 10px 22px; }
+    .topbar { align-items: flex-start; flex-direction: column; gap: 10px; }
+    .top-meta { justify-content: flex-start; }
+    h1 { font-size: 22px; }
+    .tabs { overflow-x: auto; }
+    .tab { flex: 1 0 29%; padding: 10px 14px; }
+    .toolbar { padding: 12px; }
+    .spacer { display: none; }
+    .chart-wrap { padding: 8px 7px 0; }
+    .chart-head { align-items: flex-start; flex-direction: column; }
+    .chart-meta { text-align: left; }
+    #chart { height: 54vh; min-height: 360px; }
+    .replay { flex-wrap: wrap; padding: 11px 12px 14px; }
+    .range { order: 3; flex-basis: 100%; }
+    .time-label { flex: 1; min-width: 0; }
+    .summary-grid { grid-template-columns: 1fr; }
+    .ranking-list { grid-template-columns: 1fr; }
+    .rank-row:nth-child(2) { border-top: 1px solid #f0f2f6; }
+    .rank-row:first-child { border-top: 0; }
+  }
 </style>
 </head>
 <body>
-<div id="chart"></div>
-<div id="controls">
-  <button id="play">▶ 回放</button>
-  <label>速度 <input id="speed" type="range" min="1" max="40" value="12"></label>
-  <span id="speed-label">12×</span>
-  <span class="grow"></span>
-  <span id="status"></span>
+<div class="app-shell">
+  <header class="topbar">
+    <div><div class="eyebrow">FLOW DESK / SECTOR MONEY FLOW</div><h1>板块资金实时流向</h1></div>
+    <div class="top-meta">
+      <span id="source-badge" class="source-badge">数据源加载中…</span>
+      <span class="connection-badge"><span id="connection-dot" class="dot"></span><span id="connection-text">等待数据</span></span>
+    </div>
+  </header>
+
+  <main class="panel">
+    <nav class="tabs" aria-label="图表视图">
+      <button class="tab active" data-view="curve">曲线图</button>
+      <button class="tab" data-view="ranking">排序图</button>
+      <button class="tab" data-view="race">赛车图</button>
+    </nav>
+    <div class="toolbar">
+      <div class="group"><span class="label">回放时长</span><button class="chip" data-seconds="8">8s</button><button class="chip" data-seconds="13">13s</button><button class="chip active" data-seconds="15">15s</button><button class="chip" data-seconds="30">30s</button></div>
+      <span class="spacer"></span>
+      <button id="export-csv" class="action primary">导出 CSV</button>
+      <button id="export-image" class="action">导出图片</button>
+    </div>
+    <section class="chart-wrap">
+      <div class="chart-head"><span id="chart-title" class="chart-title">板块净流入（亿元）</span><span id="chart-meta" class="chart-meta">等待数据</span></div>
+      <div id="chart" aria-label="板块资金流向图表"></div>
+    </section>
+    <div class="replay">
+      <button id="restart" class="round-button" title="回到起点" aria-label="回到起点">⏮</button>
+      <button id="play" class="round-button" title="播放回放" aria-label="播放回放">▶</button>
+      <input id="timeline" class="range" type="range" min="1" max="1" value="1" aria-label="回放时间轴">
+      <span id="time-label" class="time-label">等待数据</span>
+      <button id="realtime" class="live-button active">● 实时</button>
+    </div>
+  </main>
+
+  <section class="summary-grid">
+    <article class="summary-card"><h2>当前排名 · 最新净流入</h2><div id="ranking-list" class="ranking-list"><span class="note">等待数据…</span></div></article>
+    <article class="summary-card"><h2>数据说明</h2><p id="data-note" class="note">当前页面会显示数据源、资金口径和最近采集时间。曲线图、排序图和赛车图使用同一份当天数据；未来尚未采集的时点保持空值。</p></article>
+  </section>
+  <div id="status" role="status" aria-live="polite">加载中…</div>
 </div>
+<div id="toast" class="toast" role="alert"></div>
+
 <script>
 const params = new URLSearchParams(location.search);
 const dateParam = params.get('date') || chinaDate();
 const isMock = dateParam === 'mock';
+const dprParam = Number(params.get('dpr'));
+const chartDpr = dprParam === 1 || dprParam === 2 ? dprParam : undefined;
 const dataUrl = `../data/${encodeURIComponent(dateParam)}.json`;
 const statusEl = document.getElementById('status');
+const sourceBadge = document.getElementById('source-badge');
+const connectionDot = document.getElementById('connection-dot');
+const connectionText = document.getElementById('connection-text');
+const chartTitle = document.getElementById('chart-title');
+const chartMeta = document.getElementById('chart-meta');
+const dataNote = document.getElementById('data-note');
+const rankingList = document.getElementById('ranking-list');
+const timeline = document.getElementById('timeline');
+const timeLabelEl = document.getElementById('time-label');
 const playBtn = document.getElementById('play');
-const speedSlider = document.getElementById('speed');
-const speedLabel = document.getElementById('speed-label');
+const realtimeBtn = document.getElementById('realtime');
+const toastEl = document.getElementById('toast');
 
 let chart = null;
 let currentData = null;
 let fullSeriesData = [];
 let tickLookup = {};
+let viewMode = 'curve';
+let cursor = 1;
+let latestCursor = 1;
+let playbackSeconds = 15;
 let replayTimer = null;
 let refreshTimer = null;
+let toastTimer = null;
+let isLive = true;
 
 function chinaDate() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
 }
 
-function formatStatus(d, suffix = '') {
-  const metric = d.metric_label || (isMock ? '模拟数据' : '新浪板块净流入');
-  const updated = d.updated_at ? ` · 更新时间 ${d.updated_at}` : '';
-  return `${d.trade_date} · ${d.series.length} 板块 · ${d.session_minutes} 分钟 · ${metric}${updated}${suffix}`;
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
-function stopReplay() {
-  if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
-  playBtn.textContent = '▶ 回放';
+function formatYi(value) {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
+  const n = Number(value);
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}`;
 }
 
-function makeOption(cursor) {
-  const d = currentData;
-  const N = d.session_minutes;
-  const tickValues = d.ticks.map(t => t.value);
+function timeLabel(index) {
+  if (tickLookup[index] != null) return tickLookup[index];
+  const total = index < 120 ? (9 * 60 + 30 + index) : (13 * 60 + index - 120);
+  const hour = Math.floor(total / 60);
+  const minute = total % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function valueAt(series, index) {
+  for (let i = Math.min(index, series.data.length - 1); i >= 0; i -= 1) {
+    const value = series.data[i];
+    if (value != null && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+}
+
+function observedCursor(data) {
+  let last = -1;
+  data.series.forEach(series => series.data.forEach((value, index) => {
+    if (value != null && Number.isFinite(Number(value))) last = Math.max(last, index);
+  }));
+  return Math.max(1, last + 1);
+}
+
+function rankItems() {
+  if (!currentData) return [];
+  return currentData.series.map((series, index) => ({
+    ...series,
+    index,
+    value: valueAt(series, cursor - 1),
+  })).filter(item => item.value != null).sort((a, b) => b.value - a.value);
+}
+
+function setConnection(online, text) {
+  connectionDot.classList.toggle('offline', !online);
+  connectionText.textContent = text;
+}
+
+function baseStatus(data) {
+  const metric = data.metric_label || (isMock ? '模拟数据' : '新浪板块净流入');
+  const updated = data.updated_at ? ` · 更新 ${data.updated_at}` : '';
+  return `${data.trade_date} · ${data.series.length} 板块 · ${metric}${updated}`;
+}
+
+function updateMeta(data) {
+  const providerLabel = data.provider === 'ths' ? '同花顺' : (data.provider === 'sina' ? '新浪' : (data.provider || '数据源'));
+  sourceBadge.textContent = `${providerLabel} · ${data.metric_label || '板块资金流'}`;
+  chartTitle.textContent = data.metric_label || '板块净流入（亿元）';
+  chartMeta.textContent = `${providerLabel}口径 · ${data.updated_at ? `最近采集 ${data.updated_at}` : '等待采集时间'}`;
+  dataNote.textContent = `${providerLabel}数据只与同一口径的历史点连接；页面每 60 秒检查一次当天文件，源数据刷新频率以${providerLabel}实际更新为准。未来尚未采集的时点保持空值。`;
+}
+
+function axisLabel(value) {
+  return formatYi(value);
+}
+
+function makeCurveOption() {
+  const data = currentData;
+  const tickValues = data.ticks.map(t => t.value);
   return {
     animation: false,
-    title: {
-      text: `${d.trade_date}${isMock ? '' : ' 实时'}`,
-      subtext: d.title || '资金实时分时流向',
-      left: 'center',
-      top: 8,
-      textStyle: { fontSize: 18, fontWeight: 'bold' },
-      subtextStyle: { fontSize: 14, color: '#444' },
-    },
-    grid: { left: 60, right: 130, top: 70, bottom: 36 },
+    grid: { left: 62, right: 162, top: 28, bottom: 42 },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'line' },
-      formatter: (items) => {
+      formatter: items => {
         if (!items.length) return '';
-        const x = items[0].value[0];
-        const label = tickLookup[x] || `${x}`;
-        const sorted = [...items].filter(it => it.value[1] != null).sort((a, b) => b.value[1] - a.value[1]);
-        const lines = sorted.map(it => {
-          const v = it.value[1];
-          const sign = v >= 0 ? '+' : '';
-          return `<span style="display:inline-block;width:8px;height:8px;background:${it.color};margin-right:6px;border-radius:50%"></span>${it.seriesName} <b>${sign}${v.toFixed(2)}</b>`;
-        });
-        return `<div style="font-weight:bold;margin-bottom:4px">${label}</div>` + lines.join('<br>');
+        const x = Math.round(items[0].value[0]);
+        const lines = [...items].filter(item => item.value[1] != null).sort((a, b) => b.value[1] - a.value[1]).map(item => `${item.marker}${escapeHtml(item.seriesName)} <b>${formatYi(item.value[1])}</b>`);
+        return `<div style="font-weight:700;margin-bottom:5px">${timeLabel(x)}</div>${lines.join('<br>')}`;
       },
     },
     xAxis: {
-      type: 'value',
-      min: 0,
-      max: N - 1,
-      axisLabel: {
-        customValues: tickValues,
-        formatter: v => tickLookup[Math.round(v)] || '',
-        fontSize: 12,
-      },
-      axisTick: { customValues: tickValues, alignWithLabel: false },
-      splitLine: { show: false },
+      type: 'value', min: 0, max: Math.max(1, data.session_minutes - 1),
+      axisLabel: { formatter: value => tickLookup[Math.round(value)] || '', fontSize: 11 },
+      axisTick: { customValues: tickValues }, splitLine: { show: false },
     },
     yAxis: {
-      type: 'value',
-      name: '亿元',
-      nameLocation: 'end',
-      nameGap: 14,
-      axisLabel: { formatter: v => v.toFixed(0) },
-      splitLine: { lineStyle: { type: 'dashed', color: '#eee' } },
+      type: 'value', name: '亿元', nameLocation: 'end', nameGap: 14,
+      axisLabel: { formatter: axisLabel }, splitLine: { lineStyle: { type: 'dashed', color: '#e9edf3' } },
     },
-    series: d.series.map((s, i) => ({
-      name: s.name,
-      type: 'line',
-      smooth: true,
-      showSymbol: false,
-      sampling: 'lttb',
-      lineStyle: { width: 1.6, color: s.color },
-      itemStyle: { color: s.color },
-      emphasis: { focus: 'series', lineStyle: { width: 2.4 } },
+    series: data.series.map((series, index) => ({
+      name: series.name, type: 'line', smooth: true, showSymbol: false, connectNulls: false,
+      lineStyle: { width: 1.7, color: series.color }, itemStyle: { color: series.color },
+      emphasis: { focus: 'series', lineStyle: { width: 2.5 } },
       endLabel: {
         show: true,
-        formatter: p => {
-          const v = p.value[1];
-          if (v == null) return p.seriesName;
-          const sign = v >= 0 ? '+' : '';
-          return `${p.seriesName} ${sign}${v.toFixed(2)}`;
-        },
-        color: s.color,
-        fontSize: 11,
-        distance: 6,
+        formatter: item => item.value[1] == null ? '' : `${item.seriesName} ${formatYi(item.value[1])}`,
+        color: series.color, fontSize: 11, distance: 7,
       },
-      markLine: i === 0 ? {
-        symbol: 'none',
-        silent: true,
-        data: [{ yAxis: 0 }],
-        lineStyle: { color: '#888', type: 'solid', width: 1 },
-        label: { show: false },
-      } : undefined,
-      data: fullSeriesData[i].slice(0, cursor),
+      markLine: index === 0 ? { symbol: 'none', silent: true, data: [{ yAxis: 0 }], lineStyle: { color: '#aeb8c5', width: 1 }, label: { show: false } } : undefined,
+      data: fullSeriesData[index].slice(0, cursor),
     })),
   };
 }
 
-function render(d) {
-  stopReplay();
-  currentData = d;
-  fullSeriesData = d.series.map(s => s.data.map((v, i) => [i, v]));
-  tickLookup = Object.fromEntries(d.ticks.map(t => [t.value, t.label]));
+function makeRankOption(animate) {
+  const items = rankItems();
+  const names = items.map(item => item.name).reverse();
+  const values = items.map(item => ({ value: item.value, itemStyle: { color: item.value >= 0 ? '#c94255' : '#3b8471' } })).reverse();
+  return {
+    animation: animate,
+    animationDurationUpdate: animate ? 420 : 0,
+    animationEasingUpdate: 'cubicOut',
+    grid: { left: 102, right: 78, top: 18, bottom: 28 },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: itemsAtAxis => itemsAtAxis.length ? `${escapeHtml(itemsAtAxis[0].name)} <b>${formatYi(itemsAtAxis[0].value)}</b> 亿` : '' },
+    xAxis: { type: 'value', axisLabel: { formatter: axisLabel }, splitLine: { lineStyle: { type: 'dashed', color: '#e9edf3' } } },
+    yAxis: { type: 'category', data: names, axisLabel: { fontSize: 11, width: 78, overflow: 'truncate' } },
+    series: [{ type: 'bar', barMaxWidth: 22, data: values, label: { show: true, position: 'right', formatter: item => formatYi(item.value), fontSize: 11 } }],
+  };
+}
+
+function makeOption() {
+  if (viewMode === 'curve') return makeCurveOption();
+  return makeRankOption(viewMode === 'race');
+}
+
+function renderChart() {
+  if (!currentData || typeof echarts === 'undefined') return;
   if (!chart) {
-    chart = echarts.init(document.getElementById('chart'));
-    window.addEventListener('resize', () => chart.resize());
+    const chartOptions = { renderer: 'canvas' };
+    if (chartDpr) chartOptions.devicePixelRatio = chartDpr;
+    chart = echarts.init(document.getElementById('chart'), null, chartOptions);
+    window.addEventListener('resize', () => chart && chart.resize());
   }
-  chart.setOption(makeOption(d.session_minutes), true);
-  statusEl.textContent = formatStatus(d);
+  chart.setOption(makeOption(), { notMerge: true, lazyUpdate: false });
+  updateRankingSummary();
+  updateCursorLabel();
+}
+
+function updateRankingSummary() {
+  const items = rankItems().slice(0, 8);
+  if (!items.length) {
+    rankingList.innerHTML = '<span class="note">当前游标暂无有效数据。</span>';
+    return;
+  }
+  rankingList.innerHTML = items.map((item, index) => `<div class="rank-row"><span class="rank-no">${String(index + 1).padStart(2, '0')}</span><span class="rank-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span><span class="rank-value ${item.value >= 0 ? 'up' : 'down'}">${formatYi(item.value)}亿</span></div>`).join('');
+}
+
+function updateCursorLabel() {
+  if (!currentData) return;
+  timeline.max = String(latestCursor);
+  timeline.value = String(Math.min(cursor, latestCursor));
+  timeLabelEl.textContent = `${timeLabel(Math.max(0, cursor - 1))} · ${cursor}/${latestCursor}`;
+  realtimeBtn.classList.toggle('active', isLive);
+  statusEl.textContent = isLive ? baseStatus(currentData) : `${baseStatus(currentData)} · ${viewMode === 'race' ? '赛车回放' : '回放'} ${cursor}/${latestCursor}`;
+}
+
+function stopReplay() {
+  if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
+  playBtn.textContent = '▶';
+}
+
+function startReplay() {
+  if (!currentData || latestCursor < 2) return;
+  stopReplay();
+  isLive = false;
+  if (cursor >= latestCursor) cursor = 1;
+  playBtn.textContent = '⏸';
+  const delay = Math.max(30, Math.round((playbackSeconds * 1000) / Math.max(1, latestCursor - 1)));
+  replayTimer = setInterval(() => {
+    cursor += 1;
+    renderChart();
+    if (cursor >= latestCursor) stopReplay();
+  }, delay);
+  renderChart();
+}
+
+function setView(mode) {
+  viewMode = mode;
+  document.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.view === mode));
+  renderChart();
+}
+
+function setSpeed(seconds) {
+  playbackSeconds = Number(seconds);
+  document.querySelectorAll('.chip').forEach(chip => chip.classList.toggle('active', Number(chip.dataset.seconds) === playbackSeconds));
+  if (replayTimer) startReplay();
+}
+
+function setCursor(next, live = false) {
+  stopReplay();
+  cursor = Math.max(1, Math.min(latestCursor, Number(next) || 1));
+  isLive = live;
+  renderChart();
+}
+
+function showToast(message) {
+  toastEl.textContent = message;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = filename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function exportCsv() {
+  if (!currentData) return;
+  const rows = [['日期', '时间', '板块代码', '板块名称', '净流入(亿元)']];
+  currentData.series.forEach(series => series.data.slice(0, latestCursor).forEach((value, index) => rows.push([currentData.trade_date, timeLabel(index), series.code || '', series.name, value == null ? '' : Number(value).toFixed(3)])));
+  const csv = '\ufeff' + rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${currentData.trade_date}-板块资金流.csv`);
+  showToast('CSV 已导出');
+}
+
+function exportImage() {
+  if (!chart) return;
+  const url = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#fff' });
+  const link = document.createElement('a');
+  link.href = url; link.download = `${currentData ? currentData.trade_date : 'sector-flow'}-${viewMode}.png`; link.click();
+  showToast('图片已导出');
+}
+
+function render(data) {
+  stopReplay();
+  currentData = data;
+  fullSeriesData = data.series.map(series => series.data.map((value, index) => [index, value]));
+  tickLookup = Object.fromEntries(data.ticks.map(tick => [tick.value, tick.label]));
+  latestCursor = observedCursor(data);
+  cursor = latestCursor;
+  isLive = !isMock;
+  updateMeta(data);
+  setConnection(true, isMock ? '模拟数据' : '实时文件已更新');
+  renderChart();
 }
 
 async function loadData() {
@@ -158,37 +427,23 @@ async function loadData() {
     const response = await fetch(`${dataUrl}?_=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     render(await response.json());
-  } catch (err) {
-    statusEl.textContent = hadData
-      ? `刷新失败，保留上次数据: ${err.message}`
-      : `加载失败: ${err.message}`;
+  } catch (error) {
+    setConnection(false, '等待当天数据');
+    statusEl.textContent = hadData ? `刷新失败，保留上次数据：${error.message}` : `加载失败：${error.message}`;
   } finally {
     if (!isMock && !refreshTimer) refreshTimer = setInterval(loadData, 60000);
   }
 }
 
-speedSlider.oninput = () => { speedLabel.textContent = `${speedSlider.value}×`; };
+document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => setView(tab.dataset.view)));
+document.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => setSpeed(chip.dataset.seconds)));
+playBtn.addEventListener('click', () => replayTimer ? stopReplay() : startReplay());
+document.getElementById('restart').addEventListener('click', () => setCursor(1));
+timeline.addEventListener('input', event => setCursor(event.target.value));
+realtimeBtn.addEventListener('click', () => setCursor(latestCursor, true));
+document.getElementById('export-csv').addEventListener('click', exportCsv);
+document.getElementById('export-image').addEventListener('click', exportImage);
 
-function startReplay() {
-  if (!currentData) return;
-  const N = currentData.session_minutes;
-  let cursor = 1;
-  playBtn.textContent = '⏸ 暂停';
-  const tick = () => {
-    const speed = +speedSlider.value;
-    cursor = Math.min(N, cursor + Math.max(1, Math.round(speed / 6)));
-    chart.setOption({ series: currentData.series.map((s, i) => ({ data: fullSeriesData[i].slice(0, cursor) })) });
-    const labelText = tickLookup[cursor - 1] || '';
-    statusEl.textContent = `${currentData.trade_date} · 回放中 ${cursor}/${N} ${labelText}`;
-    if (cursor >= N) {
-      stopReplay();
-      statusEl.textContent = `${currentData.trade_date} · 回放完成`;
-    }
-  };
-  replayTimer = setInterval(tick, 1000 / +speedSlider.value);
-}
-
-playBtn.onclick = () => { if (replayTimer) stopReplay(); else startReplay(); };
 statusEl.textContent = `加载 ${dataUrl}…`;
 loadData();
 </script>

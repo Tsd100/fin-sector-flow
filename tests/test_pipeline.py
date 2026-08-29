@@ -23,6 +23,14 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(result, rows)
         fetch.assert_called_once_with("industry")
 
+    def test_provider_dispatches_to_ths(self):
+        rows = [{"code": "THS-A"}]
+        with patch("providers.ths.fetch_board_snapshot", return_value=rows) as fetch:
+            result = providers.fetch_sector_snapshot("industry", provider="ths")
+
+        self.assertEqual(result, rows)
+        fetch.assert_called_once_with("industry")
+
     def test_write_payload_uses_utf8(self):
         payload = {"title": "新浪板块净流入", "series": []}
         with tempfile.TemporaryDirectory() as td:
@@ -81,6 +89,35 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(payload["series"][0]["code"], "R")
         self.assertEqual(payload["series"][0]["data"][:2], [1.0, 3.0])
 
+    def test_export_leaves_future_points_empty_after_last_observation(self):
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "flow.db"
+            db.init(db_path)
+            db.upsert(
+                [{"sector_type": "industry", "code": "A", "name": "测试", "main_net": 100_000_000}],
+                trade_date="2026-08-29",
+                ts="2026-08-29 09:31:00",
+                session_min=0,
+                db_path=db_path,
+            )
+            db.upsert(
+                [{"sector_type": "industry", "code": "A", "name": "测试", "main_net": 200_000_000}],
+                trade_date="2026-08-29",
+                ts="2026-08-29 09:32:00",
+                session_min=1,
+                db_path=db_path,
+            )
+
+            payload = export.build(
+                trade_date="2026-08-29",
+                db_path=db_path,
+                config={"watchlist": ["测试"]},
+            )
+
+        self.assertEqual(payload["series"][0]["data"][:2], [1.0, 2.0])
+        self.assertIsNone(payload["series"][0]["data"][2])
+        self.assertIsNone(payload["series"][0]["data"][-1])
+
     def test_run_once_writes_sqlite_and_same_day_json(self):
         rows = [{
             "sector_type": "industry",
@@ -118,6 +155,11 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("setInterval(loadData, 60000)", source)
         self.assertIn("dateParam === 'mock'", source)
         self.assertIn("新浪板块净流入", source)
+        for label in ("曲线图", "排序图", "赛车图", "导出 CSV", "导出图片", "同花顺"):
+            self.assertIn(label, source)
+        self.assertIn("devicePixelRatio", source)
+        for excluded in ("个股池", "板块池", "工具箱", "我的"):
+            self.assertNotIn(excluded, source)
 
 
 if __name__ == "__main__":

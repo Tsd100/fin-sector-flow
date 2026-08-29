@@ -1,7 +1,7 @@
 title: 资金实时分时流向
-provider: sina
-poll_interval_seconds: 300
-metric_label: 板块净流入（新浪口径）
+provider: ths
+poll_interval_seconds: 60
+metric_label: 板块净流入（同花顺口径）
 
 sina:
   fenlei:

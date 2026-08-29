@@ -67,6 +67,7 @@ def build(*, trade_date: str, db_path: Path, config: dict) -> dict:
     watchlist = _normalize_watchlist(config["watchlist"])
     name_to_color = {w["name"]: w["color"] for w in watchlist}
     target_names = [w["name"] for w in watchlist]
+    last_observed_session = int(df["session_min"].max())
 
     # Pivot by the stable board code, not the display name. This keeps a line
     # continuous when Sina changes a board name during the trading day.
@@ -80,6 +81,7 @@ def build(*, trade_date: str, db_path: Path, config: dict) -> dict:
         .reindex(range(SESSION_MINUTES))
         .ffill()
     )
+    wide.loc[wide.index > last_observed_session, :] = float("nan")
 
     inflow_color = config.get("inflow_color", "#d62728")
     outflow_color = config.get("outflow_color", "#1f77b4")

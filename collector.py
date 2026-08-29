@@ -116,9 +116,9 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml", help="YAML config path")
     parser.add_argument(
         "--provider",
-        choices=("sina", "eastmoney"),
+        choices=("sina", "ths", "eastmoney"),
         default=None,
-        help="Data provider; default comes from config.yaml",
+        help="Data provider; default comes from config.yaml (ths, sina, eastmoney)",
     )
     parser.add_argument("--output-dir", default="data", help="Export JSON directory")
     parser.add_argument(
