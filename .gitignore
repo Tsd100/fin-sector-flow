@@ -2,3 +2,4 @@ __pycache__/
 *.py[cod]
 data/*.db
 data/20*.json
+.superpowers/
