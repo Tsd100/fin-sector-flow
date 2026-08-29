@@ -78,16 +78,20 @@ def _request_page(
     session: requests.Session,
     timeout: float = 10.0,
     page_size: int = _PAGE_SIZE,
+    fenlei_by_type: Mapping[str, int] | None = None,
 ) -> list[dict]:
     if sector_type not in FENLEI_BY_TYPE:
         raise ValueError(f"sector_type must be one of {list(FENLEI_BY_TYPE)}, got {sector_type!r}")
 
+    category_map = fenlei_by_type or FENLEI_BY_TYPE
+    if sector_type not in category_map:
+        raise ValueError(f"no Sina fenlei mapping for {sector_type!r}")
     params = {
         "page": str(page),
         "num": str(page_size),
         "sort": "netamount",
         "asc": "0",
-        "fenlei": str(FENLEI_BY_TYPE[sector_type]),
+        "fenlei": str(category_map[sector_type]),
     }
     last_err: Exception | None = None
     for attempt, backoff in enumerate((0.0,) + _RETRY_BACKOFFS, start=1):
@@ -128,6 +132,7 @@ def fetch_board_snapshot(
     timeout: float = 10.0,
     page_size: int = _PAGE_SIZE,
     max_pages: int = _MAX_PAGES,
+    fenlei_by_type: Mapping[str, int] | None = None,
 ) -> list[dict]:
     """Return the current Sina board-flow snapshot with pagination."""
     client = session or requests.Session()
@@ -137,6 +142,7 @@ def fetch_board_snapshot(
         session=client,
         timeout=timeout,
         page_size=page_size,
+        fenlei_by_type=fenlei_by_type,
     )
 
     pages = [first]
@@ -150,6 +156,7 @@ def fetch_board_snapshot(
                 session=client,
                 timeout=timeout,
                 page_size=page_size,
+                fenlei_by_type=fenlei_by_type,
             )
         except SinaError as exc:
             log.warning("Sina %s partial snapshot: page %d skipped: %s", sector_type, page, exc)
