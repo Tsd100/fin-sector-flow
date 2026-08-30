@@ -1,7 +1,7 @@
 """Generate a synthetic JSON file matching the shape of export.py output.
 
 Used for offline frontend development before any real intraday data is
-captured. The 20 sectors and their close-of-day values are synthetic demo
+captured. The 32 sectors and their close-of-day values are synthetic demo
 values for exercising the configured watchlist.
 """
 from __future__ import annotations
@@ -34,6 +34,18 @@ DEFAULT_SECTORS: list[tuple[str, float]] = [
     ("黄金", 11.20),
     ("白银", -4.80),
     ("石油", -18.60),
+    ("农化制品", 22.00),
+    ("化学原料", 18.00),
+    ("化学制品", 14.00),
+    ("种子生产", 13.00),
+    ("种植业", 10.00),
+    ("软件开发", 8.00),
+    ("网络安全", 6.00),
+    ("光伏设备", 4.00),
+    ("白酒", 3.00),
+    ("钢铁", -2.00),
+    ("汽车整车", 2.00),
+    ("房地产服务", -1.00),
 ]
 
 INFLOW_COLOR = "#d62728"

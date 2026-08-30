@@ -172,7 +172,11 @@ class PipelineTests(unittest.TestCase):
     def test_config_watchlist_matches_requested_sector_selection(self):
         config = export.load_config(Path("config.yaml"))
         names = [item if isinstance(item, str) else item["name"] for item in config["watchlist"]]
-        for name in ("创新药", "半导体设备", "半导体", "芯片", "黄金", "白银", "石油"):
+        for name in (
+            "创新药", "半导体设备", "半导体", "芯片", "黄金", "白银", "石油",
+            "农化制品", "化学原料", "化学制品", "种子生产", "种植业", "软件开发",
+            "网络安全", "光伏设备", "白酒", "钢铁", "汽车整车", "房地产服务",
+        ):
             self.assertIn(name, names)
         for name in ("罕见病", "中药", "减速器"):
             self.assertNotIn(name, names)
