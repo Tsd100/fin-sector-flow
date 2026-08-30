@@ -161,6 +161,13 @@ class PipelineTests(unittest.TestCase):
         for excluded in ("个股池", "板块池", "工具箱", "我的"):
             self.assertNotIn(excluded, source)
 
+    def test_viewer_gives_flow_chart_more_vertical_space_and_avoids_label_overlap(self):
+        source = Path("web/viewer.html").read_text(encoding="utf-8")
+        self.assertIn("height: min(72vh, 760px)", source)
+        self.assertIn("min-height: 560px", source)
+        self.assertIn("height: 68vh; min-height: 500px", source)
+        self.assertIn("moveOverlap: 'shiftY'", source)
+
 
 if __name__ == "__main__":
     unittest.main()
