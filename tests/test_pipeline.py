@@ -8,6 +8,7 @@ from unittest.mock import patch
 import db
 import export
 import collector
+import mock_data
 import providers
 
 
@@ -167,6 +168,19 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("min-height: 560px", source)
         self.assertIn("height: 68vh; min-height: 500px", source)
         self.assertIn("moveOverlap: 'shiftY'", source)
+
+    def test_config_watchlist_matches_requested_sector_selection(self):
+        config = export.load_config(Path("config.yaml"))
+        names = [item if isinstance(item, str) else item["name"] for item in config["watchlist"]]
+        for name in ("创新药", "半导体设备", "半导体", "芯片", "黄金", "白银", "石油"):
+            self.assertIn(name, names)
+        for name in ("罕见病", "中药", "减速器"):
+            self.assertNotIn(name, names)
+
+    def test_mock_data_uses_configured_watchlist_names(self):
+        config = export.load_config(Path("config.yaml"))
+        configured = [item if isinstance(item, str) else item["name"] for item in config["watchlist"]]
+        self.assertEqual([item["name"] for item in mock_data.build()["series"]], configured)
 
 
 if __name__ == "__main__":
